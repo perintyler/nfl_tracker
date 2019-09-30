@@ -14,11 +14,9 @@ def getFileExt(path):
     file = os.path.basename(path)
     return os.path.splitext(file)[1]
 
-
 def getFrameRate(video):
     vid_cap = cv2.VideoCapture(video)
     return vid_cap.get(cv2.CAP_PROP_FPS)
-
 
 def removeBlackFrames(video):
     frame0 = video[0]
@@ -27,7 +25,9 @@ def removeBlackFrames(video):
 def getArrayFromVideo(file):
     return skvideo.io.vread(file)
 
-
+# def dir_map(dir, func):
+#     for scene in os.path.listdir(scene_dir):
+#         scene_path = os.path.join(scene_dir, scene)
 if __name__ == '__main__':
     video = 'scenes/2019w3_nyj-ne/scene_0.mov'
     arr = getArrayFromVideo(video)

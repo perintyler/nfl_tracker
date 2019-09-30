@@ -65,7 +65,7 @@ def getSceneTimestamps(video_file, save_as_csv=False):
 
     # Set the duration to be the whole video. The beginging of the video starts
     # at the video managers base_timecode. The end can be found with video length
-    start_time = base_timecode + 20
+    start_time = base_timecode
     end_time = start_time + video_length
     video_manager.set_duration(start_time=start_time, end_time=end_time)
 
@@ -109,23 +109,15 @@ def saveScene(infile, outfile, timestamp):
     # get the starting and ending frame time code
     start, end = timestamp[0], timestamp[1]
     start_time = start.get_timecode()
-    #threshold = '00:00:01'
     duration = (end - start).get_timecode()
 
+    # https://superuser.com/questions/138331/using-ffmpeg-to-cut-up-video
+    # https://superuser.com/questions/1056599/ffmpeg-re-encode-a-video-keeping-settings-similar
+    cmd = ['ffmpeg', '-i', infile, '-ss', start_time, '-t', duration, '-c:v', 'libx264', '-crf', '18', '-preset', 'slow', '-c:a', 'copy', outfile]
 
-    # start_frame = start.get_frames() / start.get_framerate()
-    # num_frames = end.get_frames() - start.get_frames()
-    # print(start_frame, num_frames)
-    # end = timestamp[1].get_timecode()
-    # frames = timestamp[1].get_frames() - timestamp[2].get_frames()
-    # print(f'Saving scene {outfile} with timestamp {timestamp}')
-    # command: ffmpeg -i "video.mp4" -ss "0" -c copy "scene.mp4"
-    cmd = ['ffmpeg', '-noaccurate_seek', '-ss', start_time, '-i', infile, '-to', duration, '-c', 'copy', outfile]
-    # cmd = ['ffmpeg', '-ss', str(start_frame), '-i', infile, '-c:v', 'libx264', '-c:a', 'aac', '-frames:v', str(num_frames), outfile]
-
-    # cmd = ['ffmpeg', '-noaccurate_seek','-ss', start, '-i', infile, '-to', end, '-c', 'copy', outfile, '-f', '.mov', '-avoid_negative_ts', 'make_zero']
-    # run the command, sending stdout/err to a null file to avoid long prints in terminal
+    print(f'encoding video file {infile} with timestamp {timestamp}')
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # subprocess.run(cmd, stderr=subprocess.DEVNULL)
 
 
 
@@ -161,9 +153,12 @@ if __name__ == '__main__':
                     scene_length = (end_time - start_time).get_seconds()
 
                     if scene_length < 2: continue
+
                     scene_file = f'scene_{scene_number}{video_ext}'
                     scene_path = os.path.join(scene_dir, scene_file)
+
                     saveScene(video_path, scene_path, timestamp)
+
     except Exception as e:
         traceback.print_exc()
     finally:
