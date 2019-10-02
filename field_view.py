@@ -13,18 +13,47 @@ import os
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from math import sqrt
+from PIL import Image, ImageFilter, ImageEnhance
+import pytesseract as tes
+from skimage.draw import line_aa
 
 FIELD_LINE_WIDTH = 10.16 # cm
+
+def getTopBottom(p0,p1):
+    p0_y, p1_y = p0[1], p1[1]
+    top = p0 if p0_y > p1_y else p1
+    bottom = p0 if p0_y < p1_y else p1
+    return top, bottom
+
+def getLineSlope(p0, p1):
+    top, bottom = getTopBottom(p0,p1)
+    return (top[1]-bottom[1])/(top[0]-bottom[0])
 
 def polygon_area(coords):
     return Polygon(coords).area
 
+def getSlopeOutlier(field_lines):
+    getSlope = lambda p0, p1: (p1[1]-p0[1])/(p1[0]-p0[0])
+    slopes = []
+    for fl in field_lines:
+        p0, p1 = fl
+        top, bottom = getTopBottom(p0,p1)
+        slope = getSlope(top, bottom)
+        slopes.append(slope)
+
+    std = np.std(slopes)
+    std_cutoff = 10
+    if std > std_cutoff:
+        outlier_cutoff = 2 * std
+        isOutlier = lambda slope: abs(slope - std) > outlier_cutoff
+        field_lines = [field_lines[i] for i, slope in enumerate(slopes) if not isOutlier(slope)]
+    return field_lines
+
 
 def toBlackAndWhite(img):
-    gray_scale = np.dot(img[...,:3], [0.2989, 0.5870, 0.1140])
-    bw = np.asarray(gray_scale).copy()
-    bw[bw < 128] = 0    # Black
-    bw[bw >= 128] = 255 # White
+    avg = np.mean(img, axis=2)
+    bw = np.zeros(img.shape)
+    bw[np.where(avg>150)] = [255,255,255]
     return bw
 
 def getCoordinates(line):
@@ -47,13 +76,14 @@ def findIntersection(line1, line2):
         return True, (px, py)
 
 def isPointOnscreen(x, y, width, height):
-    return x >= 0 and y >= 0 and x <= width and y <= height
+    return x >= 0 and y >= 0 and x < width and y < height
 
 def getEdgePoints(line, width, height):
-    top = (0, height, width, height)
-    bottom = (0, 0, width, 0)
-    left = (0, 0, 0, height)
-    right = (width, 0, width, height)
+    max_x, max_y = width-1, height-1
+    top = (0, max_y, max_x, max_y)
+    bottom = (0, 0, max_x, 0)
+    left = (0, 0, 0, max_y)
+    right = (max_x, 0, max_x, max_y)
 
     onscreen_points = []
     for edge in [top, bottom, left, right]:
@@ -61,7 +91,7 @@ def getEdgePoints(line, width, height):
         if not intersection_exists: continue
         x, y = int(intersection[0]), int(intersection[1])
         if isPointOnscreen(x,y,width,height):
-            point = (int(x), int(y))
+            point = (x,y)
             onscreen_points.append(point)
     return onscreen_points
 
@@ -78,10 +108,59 @@ def getMinMaxPoints(points):
         x_max, y_max = max(x_max, x), max(y_max, y)
     return x_min, y_min, x_max, y_max
 
+def getdxdy(distance, slope):
+    dx = sqrt( distance**2 / (1 + slope**2))
+    dy = slope*dx
+    return dx, dy
+
+def adjustFieldLines(brightness, lines):
+    adjustment_range = 20
+    height, width = brightness.shape[0], brightness.shape[1]
+    adjusted_field_lines = []
+    for l in lines:
+        adjusted_line = []
+        slope = getLineSlope(l[0],l[1])
+        for p in l:
+            xl,yl = p
+            line_distance = 15
+            dx, dy = getdxdy(line_distance, slope)
+            lpx, lpy = xl, yl
+            if yl < height/2 and slope > 0 or yl > height/2 and slope < 0:
+                lpx += dx
+                lpy += dy
+            else:
+                lpx -= dx
+                lpy -= dy
+            if isPointOnscreen(lpx,lpy, width, height):
+                xl,yl = lpx,lpy
+
+            xl, yl = int(xl), int(yl)
+            # if yl == height: # THIS IS SO DUMB CHANGE ISONSCREEN
+            #     yl-=1
+            # if xl == width:
+            #     xl-=1
+            start, end = xl - adjustment_range/2, xl + adjustment_range/2
+            mbx, b = xl, brightness[yl][xl]
+
+            for xt in range(int(start), int(end)):
+                if xt >= width: break
+                xtb = brightness[yl][xt]
+                if xtb > b:
+                    b = xtb
+                    mbx = xt
+            adjusted_line.append((mbx, yl))
+        adjusted_field_lines.append(adjusted_line)
+
+    return adjusted_field_lines
+
+
 def groupLines(img, lines):
 
     width, height = img.shape[1], img.shape[0]
-
+    no_green = img.copy()
+    greens = img[:,:,1]
+    no_green[:,:,1] = 0
+    brightness = np.mean(no_green, axis=2)
 
     point_to_point = {}
     point_to_line = {}
@@ -94,7 +173,6 @@ def groupLines(img, lines):
         point_to_line[p1] = line
         point_to_line[p2] = line
         points.extend([p1, p2])
-
 
     clusters = hcluster.fclusterdata(points, 50, criterion="distance")
     point_groups = {} # line groups
@@ -112,7 +190,6 @@ def groupLines(img, lines):
     # print(groups)
 
     associations = set()
-    print('1')
     unconnected_point_groups = point_groups.copy()
     while len(unconnected_point_groups) > 0:
         label, pg = unconnected_point_groups.popitem()
@@ -138,7 +215,6 @@ def groupLines(img, lines):
         # else:
         #     for label in connections:
         #         unconnected_point_groups.pop(label)
-    print('2')
     field_lines = []
     for association in associations:
         label1, label2 = association[0], association[1]
@@ -152,78 +228,86 @@ def groupLines(img, lines):
 
 
             hull_points = [line_group[v] for v in hull.vertices]
-            #print('og poly', polygon_area(hull_points))
-                # if x_min is None or x_min[0] > x: x_min = (x,y)
-                # if y_min is None or y_min[1] > y: y_min = (x,y)
-                # if x_max is None or x_max[0] < x: x_max = (x,y)
-                # if y_max is None or y_max[1] < y: y_max = (x,y)
-            #field_line = (x_min, y_min, x_max, y_max)
+            if len(hull_points) < 4: continue
 
-            frame = Image.new('L', (width, height), 0)
-            ImageDraw.Draw(frame).polygon(hull_points, outline=1, fill=1)
-            fl = np.array(frame)
+            # Note: This will only work for the overhead angle. Otherwise
+            # you would need to do left points and right points
+            top_points = [hp for hp in hull_points if hp[1] > height/2]
+            bottom_points = [hp for hp in hull_points if hp[1] < height/2]
+            if len(top_points) != 2 and len(bottom_points) != 2: continue
+            top_ave_x = (top_points[0][0] + top_points[1][0]) / 2
+            bottom_ave_x = (bottom_points[0][0] + bottom_points[1][0]) / 2
+            top_ave_y = (top_points[0][1] + top_points[1][1]) / 2
+            bottom_ave_y = (bottom_points[0][1] + bottom_points[1][1]) / 2
 
+            fl_p0 = (int(top_ave_x), int(top_ave_y))
+            fl_p1 = (int(bottom_ave_x), int(bottom_ave_y))
+            field_line = (fl_p0, fl_p1)
+            field_lines.append(field_line)
 
-            far_away = width*height
-            closest_points = { hp: [far_away,()] for hp in hull_points}
-            getDistance = lambda p1, p2: sqrt( (p2[0] - p1[0])**2 + (p2[1] - p1[1])**2 )
-            # white_channel = 1.0 * (img > threshold)
-            # white_channel = np.where(white_channel == [1,1,1], 1, 0)
-
-            rows, cols = height, width
-            for row in range(rows):
-                for col in range(cols):
-                    if fl[row][col] != 1: continue
-                    r, g, b = img[row][col]
-
-                    threshold = 120
-                    isWhiteEnough = lambda r,g,b: r > threshold and g > threshold and b > threshold
-                    if isWhiteEnough(r,g,b):
-                        white_point = (col, row)
-                        hp_distances = [getDistance(hp,white_point) for hp in hull_points]
-                        distance_ranks = [i[0] for i in sorted(enumerate(hp_distances), key=lambda k:k[1])]
-                        for rank, index in enumerate(distance_ranks):
-                            hp_distance = hp_distances[index]
-                            hp = hull_points[index]
-                            min_distance = closest_points[hp][0]
-                            if hp_distance < min_distance:
-                                #print('yes', hp, hp_distance, min_distance, x, y)
-                                closest_points[hp] = (hp_distance,white_point)
-                                break
-
-            fl_poly = list(map(lambda val: val[1], closest_points.values()))
-
-            field_lines.append(fl_poly)
-
-
-    # slopes = []
-    # for points in field_lines:
-    #     x_min, y_min, x_max, y_max = getMinMaxPoints(points)
-    #     slope = (y_max-y_min)/(x_max-x_min)
-    #     slopes.append(slope)
-
-    # color_threshold = 200
-    # line_groups = []
-    # for fl in field_lines:
-    #     lines = set()
-    #     for point in fl:
-    #         line = point_to_line[point]
-    #         lines.add(line)
-    #     line_groups.append(lines)
-
+    field_lines = adjustFieldLines(brightness, field_lines)
+    field_lines = sorted(field_lines, key=lambda p: p[0][0])
 
     return field_lines
-    # line_groups = []
-    # ungrouped_lines = set(lines)
-    # while len(point_groups) > 0 and len(ungrouped_lines) != 0:
-    #     label, point_group = point_groups.popitem()
-    #     line_group = set()
-    #     for point in point_group:
-    #         line = point_to_line[point]
-    #         if line in ungrouped_lines:
-    #             line_group.add(line)
-    #             ungrouped_lines.remove(line)
-    #     line_groups.append(line_group)
+
+def getDistanceRatio(field_lines):#y, width, height):
+    fl_distance = 10 # 10 yards
+    top_distance, bottom_distance = 0, 0
+    last_points = []
+    num_lines = len(field_lines)
+    for i in range(num_lines):
+        p0,p1 = field_lines[i]
+        top, bottom = getTopBottom(p0,p1)
+        if i == 0:
+            last_points = [top, bottom]
+        else:
+            top_distance += abs(top[0] - last_points[0][0])
+            bottom_distance += abs(bottom[0] - last_points[1][0])
+    dfl = 10 # 10 yards
+    top_distance /= (num_lines-1)
+    bottom_distance /= (num_lines-1)
+
+    top_ratio = top_distance / dfl
+    bottom_ratio = bottom_distance / dfl
+
+    return (top_ratio + bottom_ratio) / 2
+    #
+    # y_ratio = y/height
+    # return bottom_ratio + y_ratio(top_ratio - bottom_ratio)
+
+def removeFieldLines(img, field_lines):
+    #fl_width = 0.111111
+    fl_width = 0.2
+    pixelDistanceRatio = getDistanceRatio(field_lines)
+    fl_pixel_width = int(pixelDistanceRatio * fl_width)
+    print('fl width', fl_pixel_width)
+    for fl in field_lines:
+        cv.line(img, fl[0], fl[1], [0,0,0], fl_pixel_width)
+    return img
+
+def doSomething(img, field_lines):
+    width, height = img.shape[1], img.shape[0]
+    no_greens = img.copy()
+    no_greens[:,:,1] = 0
+    avg_rb = np.mean(no_greens,axis=2)
+    # darks = np.where(avg_rb < 100, 1, 0)
+    darks = np.where(avg_rb > 100, 1, 0)
+    # wi = np.zeros(img_arr.shape)
+    # wi[np.nonzero(whites)] = [255,255,255]
+    # whites = np.zeros(img.shape)#np.zeros(img.shape)
+    # whites.fill(255)
+    whites = img.copy()
+    whites[np.nonzero(darks)] = [255,0,0]
+    removeFieldLines(whites, field_lines)
+    # whites[0:int(0.66*height),:] = [0,0,0]
+    whites = np.array(whites,np.int32)
+
+    res = tes.image_to_string(Image.fromarray((whites * 255).astype(np.uint8)),config='digits')
+    print(res)
+    visualize.show_image(whites)
+
+    # print(int(0.9*height))
+    # whites[int(0.9*height):height,:] = [255,0,0]
 
 
 
@@ -231,11 +315,14 @@ if __name__ == '__main__':
     # edges = cv2.Canny(frame,100,200)
 
     #video = 'scenes/2019w3_nyj-ne/scene_0.mov'
-    scene_dir = 'scenes/wentz'
+    scene_dir = 'scenes/overhead'
     for scene_file in os.listdir(scene_dir):
         scene_path = os.path.join(scene_dir, scene_file)
 
+        #scene_path = 'scenes/overhead/scene_22.mp4'
+        #scene_path = scenes/overhead/scene_19.mp4
         print(scene_path)
+
         scene = getArrayFromVideo(scene_path)
         frame = scene[0]
         height, width = frame.shape[0], frame.shape[1]
@@ -253,21 +340,12 @@ if __name__ == '__main__':
                 # cv.line(frame,(x1,y1),(x2,y2),(255,0,0),2)
                 fixed.append((x1,y1,x2,y2))
         groups = groupLines(frame, fixed)
+        doSomething(frame, groups)
         # field_lines = [getFieldLine(g) for g in groups if len(g)>2]
-
+        # visualize.show_image(toBlackAndWhite(frame))
         for field_line in groups:
-            # for point in field_line:
-            #     print(point)
-            #     cv.circle(frame, point, 3, [0,0,255])
-            poly = np.array(field_line, 'int32')
-            # x_min, y_min = float("inf"), float("inf")
-            # x_max, y_max = 0, 0
-            # for x,y in points:
-            #     x_min, y_min = min(x_min, x), min(y_min, y)
-            #     x_max, y_max = max(x_max, x), max(y_max, y)
-            # slope = (y_max-y_min)/(x_max-x_min)
-            # print(slope, x_min, x_max)
 
-            cv.fillConvexPoly(frame, poly, [0,0,255])
+            cv.line(frame, field_line[0], field_line[1], [0,0,255], 2)
 
-        visualize.show_image(frame)
+
+        # visualize.show_image(frame)
