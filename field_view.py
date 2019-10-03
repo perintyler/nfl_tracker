@@ -19,6 +19,7 @@ from skimage.draw import line_aa
 
 FIELD_LINE_WIDTH = 10.16 # cm
 
+
 def getTopBottom(p0,p1):
     p0_y, p1_y = p0[1], p1[1]
     top = p0 if p0_y > p1_y else p1
@@ -113,6 +114,46 @@ def getdxdy(distance, slope):
     dy = slope*dx
     return dx, dy
 
+def getDistance(pnt0,pnt1):
+    x_distance, y_distance = pnt1[0] - pnt0[0], pnt1[1] - pnt0[1]
+    return sqrt(x_distance**2 + y_distance**2)
+
+
+
+def searchForHashMarks(green_channel, field_lines):
+    height, width = green_channel.shape[0], green_channel.shape[1]
+    search_indecies = np.zeros((height, width))
+
+    markers = []
+    # def get_point(): return
+    for fl in field_lines:
+        p0, p1 = fl
+        line_length = getDistance(p0, p1)
+        ld = 0.3*line_length
+        slope = getLineSlope(p0,p1)
+        dx, dy = getdxdy(ld, slope)
+        top, bottom = getTopBottom(p0,p1)
+
+        search_tx, search_ty = int(top[0] - dx), int(top[1] - dy)
+        search_bx, search_by = int(bottom[0] + dx), int(bottom[1] + dy)
+        search_range_top = (search_tx, search_ty)
+        search_range_bottom = (search_bx, search_by)
+
+        marker = [search_range_top, search_range_bottom]
+        markers.append(marker)
+
+    for marker in markers:
+        m0, m1 = marker
+        print(marker)
+        cv.line(green_channel, m0, m1, [0,0,255], 2)
+        visualize.show_image(green)
+    visualize.show_image(green_channel)
+    # greens = green_channel[:,:,1]
+    # gradient = np.gradient(greens)
+    # green_channel[np.where(gradient==0)] = [255, 0, 0]
+    #
+
+
 def adjustFieldLines(brightness, lines):
     adjustment_range = 20
     height, width = brightness.shape[0], brightness.shape[1]
@@ -152,6 +193,8 @@ def adjustFieldLines(brightness, lines):
         adjusted_field_lines.append(adjusted_line)
 
     return adjusted_field_lines
+
+
 
 
 def groupLines(img, lines):
@@ -299,7 +342,6 @@ def doSomething(img, field_lines):
     whites = img.copy()
     whites[np.nonzero(darks)] = [255,0,0]
     removeFieldLines(whites, field_lines)
-    # whites[0:int(0.66*height),:] = [0,0,0]
     whites = np.array(whites,np.int32)
 
     res = tes.image_to_string(Image.fromarray((whites * 255).astype(np.uint8)),config='digits')
@@ -309,7 +351,11 @@ def doSomething(img, field_lines):
     # print(int(0.9*height))
     # whites[int(0.9*height):height,:] = [255,0,0]
 
-
+def getGreenChannel(img):
+    green = img.copy()
+    green[:,:,0] = 0
+    green[:,:,2] = 0
+    return green
 
 if __name__ == '__main__':
     # edges = cv2.Canny(frame,100,200)
@@ -340,9 +386,10 @@ if __name__ == '__main__':
                 # cv.line(frame,(x1,y1),(x2,y2),(255,0,0),2)
                 fixed.append((x1,y1,x2,y2))
         groups = groupLines(frame, fixed)
-        doSomething(frame, groups)
+        # doSomething(frame, groups)
         # field_lines = [getFieldLine(g) for g in groups if len(g)>2]
         # visualize.show_image(toBlackAndWhite(frame))
+        searchForHashMarks(getGreenChannel(frame), groups)
         for field_line in groups:
 
             cv.line(frame, field_line[0], field_line[1], [0,0,255], 2)

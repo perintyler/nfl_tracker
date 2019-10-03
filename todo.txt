@@ -1,0 +1,50 @@
+Field Model:
+    - Detect hash marks
+        + take averages of regions to get derivative array
+        + find local maximums for g values
+        + line starts when spike begins
+        + line ends when the rate of (negative) change of g value slows down
+        + use halfway down field line distance as search range center
+        + make search range between two field lines
+    - detect numbers
+        + 2 options
+            * isolate blobs
+            * reduce noise
+            * straighten edges
+            * get one good image of every number and copy it every time
+                # copies should have the number in slightly different
+                locations
+            * rotate number based on field line slope
+    - point mapping with vantage
+    - detect end zones
+        + just a thicker field line
+    - boundary detection
+        + run perpendicular line with arbitrary distance towards the edge down
+        the field line
+        + if perpendicular has average green value spike before reaching the
+        end of the screen, it is a boundary
+
+
+Player Tracking:
+    - isolate
+    - grass detection
+        + remove unclustered, isolated anomalies and see if average green value
+        fits the grass value
+        + grass value different for every field, but probably easy to calculate
+        remove all grass values, field lines, logo?
+        + all thats remaining on the field should be players
+        + get team colors
+        + separate blobs to separate teams
+        + get positions from the formation
+
+Play Tracking:
+    - detect quarterback throw
+    - if i can get full game footage I can use play by play stats to train
+
+Tools:
+    - find similarity between 2 regions in an image
+    - remove shadow?
+
+Data:
+    - fix scene split
+    -
