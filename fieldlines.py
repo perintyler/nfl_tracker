@@ -30,6 +30,7 @@ class FieldLine:
         p0, p1 = coordinates
         x0, y0 = p0 
         x1, y1 = p1
+        self.next_line = None
         self.setCoordinates(x0, y0, x1, y1)
 
 
@@ -96,11 +97,16 @@ class FieldLine:
     def draw(self, image, color=[0,0,255], thickness=2):
         p0, p1 = (self.x0, self.y0), (self.x1, self.y1)
         cv.line(image, p0, p1, color, thickness)
-        return None
+
+    def hasNextLine(self):
+        return self.next_line != None
+
+    def getNextLine(self):
+        return self.next_line
 
     @staticmethod
     def sort(field_lines): 
-        sorted_lines = sorted(field_lines, key=lambda fl: fl.y0)
+        sorted_lines = sorted(field_lines, key=lambda fl: fl.x0)
         for i in range(0, len(sorted_lines)-1):
             fl1, fl2 = sorted_lines[i], sorted_lines[i+1]
             fl1.next_line = fl2
@@ -123,9 +129,21 @@ def createFieldLines(coordinates, image):
     no_green[:,:,1] = 0
     brightness = np.mean(no_green, axis=2)
 
+    field_lines = []
     for line in coordinates:
+        # create the field line using the coordinates and adjust the coordinate using brightness
         fl = FieldLine(line)
         fl.makeAdjustments(brightness)
+        field_lines.append(fl)
+
+    field_lines = FieldLine.sort(field_lines)
+    # for i in range(1,len(field_lines)):
+    #     fl1, fl2 = field_lines[i-1], field_lines[i]
+    #     fl1.next_line = fl2
+    #     fl2.last_line = fl1
+
+    return field_lines
+
 
 def findFieldLines(image):
 
@@ -136,15 +154,9 @@ def findFieldLines(image):
     framed_lines = [line.fitToFrame(l, width, height) for l in filtered_lines]
     lines_to_group = [l for l in framed_lines if len(framed_lines) != 0]
     grouped_lines = line.group(lines_to_group, width, height)
+    field_lines = createFieldLines(grouped_lines, image)
+    return field_lines
 
-    no_green = image.copy()
-    no_green[:,:,1] = 0
-    brightness = np.mean(no_green, axis=2)
-
-    createFieldLine = lambda points: FieldLine(points, brightness)
-    field_lines = list(map(createFieldLine, grouped_lines))
-
-    return FieldLine.sort(field_lines)
 
 if __name__ == '__main__':
     scenes_dir = 'scenes/overhead'

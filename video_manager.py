@@ -5,7 +5,7 @@ class VideoManager:
 
 	def __init__(self, path):
 		self.path = path
-		self.frames = skvideo.io.vread(file)
+		self.frames = skvideo.io.vread(path)
 
-	def getFrame(frame_number):
+	def getFrame(self, frame_number):
 		return self.frames[frame_number]

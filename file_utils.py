@@ -7,4 +7,4 @@ def iterateScenes(dir, func):
 
 
 def getPaths(dir):
-	return list(map(lambda fn: os.path.join(dir, fn)))
+	return list(map(lambda fn: os.path.join(dir, fn), os.listdir(dir)))

@@ -7,6 +7,12 @@ from boundaries import findBoundaries
 from players import findPlayers
 from field_model import 
 
+'''
+I'm thinking this class takes in the image, does all image processing shit, then all the 
+field line and hash mark finding can somehow access those processed images. maybe by 
+passing the field object into the search functions. Maybe create a class that stores 
+all image filters and that can be passed through all of the search functions. TBD
+'''
 
 
 
@@ -17,12 +23,9 @@ class Field:
     	fieldlines, hashmarks, fieldNumbers = findFieldMarkings(image)
     	self.boundaries = findBoundaries(fieldlines, hashmarks, fieldNumbers)
 
-    def getPlayerLocation(self,x,y): 
+    def performImageProcessing(self):
     	return
 
-
-    def findPlayers(self):
-    	return
 
     def saveToFile(self, path=None):
     	return

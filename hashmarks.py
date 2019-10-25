@@ -4,20 +4,33 @@ import numpy as np
 from collections import deque as Queue
 
 from video_manager import VideoManager
-
+import visualize
+from fieldlines import findFieldLines
+import file_utils
+import line
 
 class HashMarkDetectionError(Exception):
 
-    def __init__(self)
+    def __init__(self):
         Exception.__init__(self,'Unable to detect any hash marks')
 
 class HashMarks:
 
-    def __init__(self, locations):
-        self.centers = locations
+    def __init__(self, points1, points2):
+        self.points1, self.points2 = points1, points2
 
-    def adjust(self, brightness):
-         for point in self.centers:
+
+    def draw(self, image):
+        point_radius = 3
+        color = (0,255,0)
+        line_type = -1
+        all_points = self.points1 + self.points2
+        for point in all_points:
+            cv.circle(image,point, point_radius, color, line_type)
+
+    def makeAdjustments(self, brightness):
+        return
+        for point in self.centers:
             x, y = point
         return
 
@@ -27,24 +40,81 @@ class HashMarks:
         return [0,0,0,0]
 
 
-def findHashMarks(image, field_lines):
-    hashmarks_found = False
-    fl_to_search = field_lines.copy()
-    search_zones = list(map(lambda fl: fl.getZone(), field_lines))
-    for fl1 in field_lines:
-        fl2 = field_lines.next_line
-        center1, center2 = fl1.getMidwayPoint(), fl2
+def findHotspots(fl1, fl2, bright_vals, search_above, image, search_jump=10, max_search_distance=200):
+    NUM_HASH_MARKS = 4
+    distance_searched = 0 
+    p1, p2 = fl1.getMidwayPoint(), fl2.getMidwayPoint()
 
+    p1_dx, p1_dy = line.getdxdy(search_jump, fl1.getSlope())
+    p2_dx, p2_dy = line.getdxdy(search_jump, fl2.getSlope())
+    
+    direction = 1 if search_above else - 1
+    p1_dx, p1_dy = direction*p1_dx, direction*p1_dy
+    p2_dx, p2_dy = direction*p2_dx, direction*p2_dy
+
+    height, width = bright_vals.shape
+
+    pointIsOnscreen = lambda p: (p[0] >= 0 and p[0] < width and
+                                    p[1] >= 0 and p[1] < height)
+
+    # cv.line(image, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), [0,0,255], 2)
+    # visualize.show_image(image)
+
+    while distance_searched < max_search_distance:
+        search_line = p1[0], p1[1], p2[0], p2[1]
+        hotspots = line.getEquidistantPoints(search_line, NUM_HASH_MARKS)
+        hotspots_are_hashmarks = True
+        for point in hotspots: 
+            if not pointIsOnscreen(point): # TODO when i fix things this should be gone
+                hotspots_are_hashmarks = False
+                break
+
+            x, y = point
+            r, c = int(y), int(x)
+            point_is_bright = True if bright_vals[r,c] == 1 else False
+            if not point_is_bright:
+                hotspots_are_hashmarks = False
+                break
+        if hotspots_are_hashmarks:
+            print("WHATS IT REALLY GOOD SON")
+            return True, hotspots
+        else:
+            distance_searched += search_jump
+            p1x = p1[0] + p1_dx
+            p1y = p1[1] + p1_dy
+            p2x = p2[0] + p2_dx
+            p2y = p2[1] + p2_dy
+            p1, p2 = (p1x, p1y), (p2x, p2y)
+
+
+
+
+    return False, [] 
+
+def findHashMarks(image, field_lines):
+    SEARCH_JUMP = 10
+    MAX_SEARCH_DISTANCE = 100
+    NUM_HASH_MARKS = 4
+
+    no_green = image.copy()
+    no_green[:,:,1] = 0
+    brightness = np.mean(no_green, axis=2)
+
+    bright_vals = np.where(brightness > 120, 1, 0)
+
+    field_line = field_lines[1]
+    while field_line.hasNextLine():
+        hashmark_sets = []
+
+        top_hm_found, top_hm = findHotspots(field_line, field_line.next_line, bright_vals, True, image)
+        bottom_hm_found, bottom_hm = findHotspots(field_line, field_line.next_line, bright_vals, False, image)
+        if top_hm_found and bottom_hm_found:
+            hashmarks = HashMarks(hm1, hm2)
+            hashmarks.makeAdjustments(brightness)
+            return hashmarks
+        field_line = field_line.next_line
 
     raise HashMarkDetectionError()
-
-
-def searchBetweenFieldLines(fl1, fl2):
-    hm1, hm2 = [], []
-    hm1_found, hm2_found = False, False
-
-
-    center1, center2 = fl1.getMidwayPoint(), fl2.getMidwayPoint()
 
 
 
@@ -120,7 +190,10 @@ if __name__ == '__main__':
     first_video = videos[0]
     manager = VideoManager(first_video)
     first_frame = manager.getFrame(0)
-    field_lines = getFieldLines(first_frame)
+    field_lines = findFieldLines(first_frame)
+    hashmarks = findHashMarks(first_frame, field_lines)
+    hashmarks.draw(first_frame)
+    visualize.show_image(first_frame)
 
 
 
