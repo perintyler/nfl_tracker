@@ -11,3 +11,7 @@ def getGreenChannel(img):
     green[:,:,2] = 0
     return green
 
+
+
+def getBrightChannel(img):
+	return

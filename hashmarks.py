@@ -16,16 +16,15 @@ class HashMarkDetectionError(Exception):
 
 class HashMarks:
 
-    def __init__(self, points1, points2):
-        self.points1, self.points2 = points1, points2
+    def __init__(self, coordinates):
+        self.coordinates = coordinates
 
 
     def draw(self, image):
-        point_radius = 3
-        color = (0,255,0)
+        point_radius = 2
+        color = (255,0,0)
         line_type = -1
-        all_points = self.points1 + self.points2
-        for point in all_points:
+        for point in self.coordinates:
             cv.circle(image,point, point_radius, color, line_type)
 
     def makeAdjustments(self, brightness):
@@ -40,17 +39,19 @@ class HashMarks:
         return [0,0,0,0]
 
 
-def findHotspots(fl1, fl2, bright_vals, search_above, image, search_jump=10, max_search_distance=200):
+def findHotspots(fl1, fl2, bright_vals, image, search_jump=10, max_search_distance=500):
     NUM_HASH_MARKS = 4
     distance_searched = 0 
-    p1, p2 = fl1.getMidwayPoint(), fl2.getMidwayPoint()
+    p1, p2 = fl1.getBottomPoint(), fl2.getBottomPoint()
 
-    p1_dx, p1_dy = line.getdxdy(search_jump, fl1.getSlope())
-    p2_dx, p2_dy = line.getdxdy(search_jump, fl2.getSlope())
+    fl1_slope, fl2_slope = fl1.getSlope(), fl2.getSlope()
+    p1_dx, p1_dy = line.getdxdy(search_jump, fl1_slope)
+    p2_dx, p2_dy = line.getdxdy(search_jump, fl2_slope)
     
-    direction = 1 if search_above else - 1
-    p1_dx, p1_dy = direction*p1_dx, direction*p1_dy
-    p2_dx, p2_dy = direction*p2_dx, direction*p2_dy
+    direction1 = 1 if p1_dy > 0 else - 1
+    direction2 = 1 if p2_dy > 0 else - 1
+    p1_dx, p1_dy = direction1*p1_dx, direction1*p1_dy
+    p2_dx, p2_dy = direction2*p2_dx, direction2*p2_dy
 
     height, width = bright_vals.shape
 
@@ -61,20 +62,33 @@ def findHotspots(fl1, fl2, bright_vals, search_above, image, search_jump=10, max
     # visualize.show_image(image)
 
     while distance_searched < max_search_distance:
+        print(f'search points: {p1}, {p2}')
         search_line = p1[0], p1[1], p2[0], p2[1]
         hotspots = line.getEquidistantPoints(search_line, NUM_HASH_MARKS)
+        spots = list(map(lambda hs: (int(hs[0]),int(hs[1])),hotspots))
+
         hotspots_are_hashmarks = True
+        num_bright = 0
         for point in hotspots: 
-            if not pointIsOnscreen(point): # TODO when i fix things this should be gone
-                hotspots_are_hashmarks = False
-                break
+            # if not pointIsOnscreen(point): # TODO when i fix things this should be gone
+            #     hotspots_are_hashmarks = False
+            #     break
 
             x, y = point
             r, c = int(y), int(x)
             point_is_bright = True if bright_vals[r,c] == 1 else False
             if not point_is_bright:
                 hotspots_are_hashmarks = False
-                break
+                # break
+            else:
+                num_bright+=1
+
+        print(f'num bright: {num_bright}')
+        if num_bright > 2:
+            hm = HashMarks(spots)
+            hm.draw(image)
+            visualize.show_image(image)
+
         if hotspots_are_hashmarks:
             print("WHATS IT REALLY GOOD SON")
             return True, hotspots
@@ -105,11 +119,11 @@ def findHashMarks(image, field_lines):
     field_line = field_lines[1]
     while field_line.hasNextLine():
         hashmark_sets = []
-
-        top_hm_found, top_hm = findHotspots(field_line, field_line.next_line, bright_vals, True, image)
-        bottom_hm_found, bottom_hm = findHotspots(field_line, field_line.next_line, bright_vals, False, image)
+        top_hm_found, top_hm = findHotspots(field_line, field_line.next_line, bright_vals, image)
+        bottom_hm_found, bottom_hm = findHotspots(field_line, field_line.next_line, bright_vals, image)
         if top_hm_found and bottom_hm_found:
-            hashmarks = HashMarks(hm1, hm2)
+            hm_coordinates = hm1 + hm2
+            hashmarks = HashMarks(hm_coordinates)
             hashmarks.makeAdjustments(brightness)
             return hashmarks
         field_line = field_line.next_line
@@ -143,7 +157,6 @@ def searchForHashMarks(green_channel, field_lines, img):
 
         marker = [search_range_top, search_range_bottom]
         markers.append(marker)
-    print('have search zones')
     search_boxes = []
     for i in range(len(markers)-1):
         m0, m1 = markers[i], markers[i+1]
@@ -191,6 +204,9 @@ if __name__ == '__main__':
     manager = VideoManager(first_video)
     first_frame = manager.getFrame(0)
     field_lines = findFieldLines(first_frame)
+
+    for fl in field_lines: fl.draw(first_frame)
+
     hashmarks = findHashMarks(first_frame, field_lines)
     hashmarks.draw(first_frame)
     visualize.show_image(first_frame)

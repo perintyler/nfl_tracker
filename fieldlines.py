@@ -37,10 +37,10 @@ class FieldLine:
     def getCoordinates(self):
         return self.x0,self.y0,self.x1,self.y1
 
-    def getMidwayPoint(self):
-        x = (self.x0 + self.x1) / 2
-        y = (self.y0 + self.y1) / 2
-        return (x,y)
+    # def getMidwayPoint(self):
+    #     x = (self.x0 + self.x1) / 2
+    #     y = (self.y0 + self.y1) / 2
+    #     return (x,y)
 
     def setCoordinates(self, x0, y0, x1, y1):
         p0, p1 = (x0,y0), (x1,y1)
@@ -94,7 +94,13 @@ class FieldLine:
         adjusted_point = (brightest_x, y)
         return adjusted_point
 
-    def draw(self, image, color=[0,0,255], thickness=2):
+    def getBottomPoint(self):
+        return (self.x0, self.y0)
+
+    def getTopPoint(self):
+        return (self.x1, self.y1)
+
+    def draw(self, image, color=[0,0,255], thickness=1):
         p0, p1 = (self.x0, self.y0), (self.x1, self.y1)
         cv.line(image, p0, p1, color, thickness)
 

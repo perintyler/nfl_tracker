@@ -1,40 +1,6 @@
-import cv2 as cv
-import numpy as np 
-import math
-
-import scipy.cluster.hierarchy as hcluster
-from scipy.spatial import ConvexHull
-
-
-def getdxdy(distance, slope):
-    dx = math.sqrt( distance**2 / (1 + slope**2))
-    dy = slope*dx
-    return dx, dy
-
-def getLength(line):
-    x0, y0, x1, y1 = line
-    return math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
-
-def getEquidistantPoints(line, num_points):
-    x0, y0, x1, y1 = line
-    line_length = getLength(line)
-    point_distance = line_length / (num_points+1)
-
-    slope = (y1-y0)/(x1-x0)
-    dx, dy = getdxdy(point_distance, slope)
-
-    points = []
-    for i in range(1,num_points+1):
-        x = x0 + dx*i
-        y = y0 + dy*i
-        points.append((x,y))
-    return points
-
-
-
 
 def detect(image):
-    gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    gray = cv.cvtColor(frame,cv.COLOR_BGR2GRAY)
     edges = cv.Canny(gray,50,150,apertureSize = 3)
     lines = cv.HoughLines(edges,1,np.pi/180,200)
 
@@ -50,7 +16,9 @@ def detect(image):
 
 
 
-def group(lines, width, height):
+def group(lines):
+
+    width, height = img.shape[1], img.shape[0]
 
     point_to_point = {}
     point_to_line = {}
@@ -129,8 +97,8 @@ def group(lines, width, height):
             field_line = (fl_p0, fl_p1)
             field_lines.append(field_line)
 
-    # field_lines = adjustFieldLines(brightness, field_lines)
-    # field_lines = sorted(field_lines, key=lambda p: p[0][0])
+    field_lines = adjustFieldLines(brightness, field_lines)
+    field_lines = sorted(field_lines, key=lambda p: p[0][0])
 
     return field_lines
 
@@ -155,21 +123,12 @@ def fitToFrame(line, width, height):
     right = (max_x, 0, max_x, max_y)
 
     onscreen_points = []
-    edge_names = {top: 'top', bottom: 'bottom', left: 'left', right: 'right'}
+
     for edge in [top, bottom, left, right]:
         if len(onscreen_points) == 2: break
         intersection_exists, intersection = findIntersection(line, edge)
         if intersection_exists:
             x, y = int(intersection[0]), int(intersection[1])
-            point_is_onscreen = x >= 0 and y >= 0 and x < width and y < height
-            if point_is_onscreen:
-                onscreen_points.append( (x,y) )
-    if len(onscreen_points) != 2:
-        return []
-    else:
-        x0, y0 = onscreen_points[0]
-        x1, y1 = onscreen_points[1]
-        return [x0, y0, x1, y1]
-
-
-
+            onscreen_points.append( (x,y) )
+    p0, p1 = onscreen_points
+    return p0[0], p0[1], p1[0], p1[1]
