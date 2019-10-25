@@ -1,3 +1,22 @@
+'''
+    TODO: 
+        - once boundaries are found, the locations of field numbers should be easy to find 
+        - generate training data images from the locations. 
+        - Label data using image_labeler class 
+'''
+
+
+class FieldNumber:
+
+    def __init__(self, image, box):
+        self.box = box
+        self.value = None 
+
+    def classify(self): 
+        return
+
+
+
 def detect_text(img_arr):
     sums = np.mean(img_arr, axis=2)
     white = np.where(sums > 190, 1, 0)
@@ -19,3 +38,13 @@ def detect_text(img_arr):
     #conf = '--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789'
     # results = tes.image_to_boxes(im, output_type=output, config=conf)
     return results
+
+
+
+def findNumberBox(image, boundaries, fieldlines): 
+    return
+
+
+
+
+

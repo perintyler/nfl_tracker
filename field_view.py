@@ -19,7 +19,6 @@ from skimage.draw import line_aa
 
 FIELD_LINE_WIDTH = 10.16 # cm
 
-
 def getTopBottom(p0,p1):
     p0_y, p1_y = p0[1], p1[1]
     top = p0 if p0_y > p1_y else p1
@@ -29,9 +28,6 @@ def getTopBottom(p0,p1):
 def getLineSlope(p0, p1):
     top, bottom = getTopBottom(p0,p1)
     return (top[1]-bottom[1])/(top[0]-bottom[0])
-
-def polygon_area(coords):
-    return Polygon(coords).area
 
 def getSlopeOutlier(field_lines):
     getSlope = lambda p0, p1: (p1[1]-p0[1])/(p1[0]-p0[0])
@@ -51,19 +47,7 @@ def getSlopeOutlier(field_lines):
     return field_lines
 
 
-def toBlackAndWhite(img):
-    avg = np.mean(img, axis=2)
-    bw = np.zeros(img.shape)
-    bw[np.where(avg>150)] = [255,255,255]
-    return bw
 
-def getCoordinates(line):
-    rho, theta = line[0], line[1]
-    a, b = np.cos(theta), np.sin(theta)
-    x0, y0 = a*rho, b*rho
-    x1, y1 = int(x0 + 1000*(-b)), int(y0 + 1000*(a))
-    x2, y2 = int(x0 - 1000*(-b)), int(y0 - 1000*(a))
-    return x1, y1, x2, y2
 
 def findIntersection(line1, line2):
     x1, y1, x2, y2 = line1
@@ -96,11 +80,6 @@ def getEdgePoints(line, width, height):
             onscreen_points.append(point)
     return onscreen_points
 
-def isPointInPoly(point, vertices):
-    point = Point(point[0], point[1])
-    polygon = Polygon(vertices)
-    return polygon.contains(point)
-
 def getMinMaxPoints(points):
     x_min, y_min = float("inf"), float("inf")
     x_max, y_max = 0, 0
@@ -118,9 +97,26 @@ def getDistance(pnt0,pnt1):
     x_distance, y_distance = pnt1[0] - pnt0[0], pnt1[1] - pnt0[1]
     return sqrt(x_distance**2 + y_distance**2)
 
+def findHashes(img,line1,line2):
+    greens = img[:,:,1]
+    high_greens = np.zeros(greens.shape)
+    high_greens[np.where(greens > 200)] = 1
+    green_channel[np.nonzero(high_greens)] = [255,255,255]
+    green_channel[np.where(high_greens==0)] = [0,0,0]
+    visualize.show_image(green_channel)
+    # get search zone array
+    # get 4 lines parallel with field lines equidastly spaced
+    # get values with green is over threshold (or similar values as lines?)
+    # get intercection of lines and high greens
+    # if a perfect 8 hashes are found, were done. otherwise, need to try next lines
+    # find edges of the hashes
+    # all information needed for a field model has been found
+    return
 
 
-def searchForHashMarks(green_channel, field_lines):
+
+def searchForHashMarks(green_channel, field_lines, img):
+    print('searching for hash marks')
     height, width = green_channel.shape[0], green_channel.shape[1]
     search_indecies = np.zeros((height, width))
 
@@ -133,25 +129,56 @@ def searchForHashMarks(green_channel, field_lines):
         slope = getLineSlope(p0,p1)
         dx, dy = getdxdy(ld, slope)
         top, bottom = getTopBottom(p0,p1)
-
-        search_tx, search_ty = int(top[0] - dx), int(top[1] - dy)
-        search_bx, search_by = int(bottom[0] + dx), int(bottom[1] + dy)
+        TEMP_VANTAGE = 0.5 # get actual constant after i make field modeling stuff. Oh shit it actually might be .5 if height is field_heght
+        sign_top = -1 if slope > 0 else 1
+        sign_bottom = -1 if slope < 0 else 1
+        search_tx, search_ty = int(top[0] + sign_top*dx), int(top[1] + sign_top*dy)
+        search_bx, search_by = int(bottom[0] + sign_bottom*TEMP_VANTAGE*dx), int(bottom[1] + sign_bottom*TEMP_VANTAGE*dy)
         search_range_top = (search_tx, search_ty)
         search_range_bottom = (search_bx, search_by)
 
         marker = [search_range_top, search_range_bottom]
         markers.append(marker)
-
-    for marker in markers:
-        m0, m1 = marker
-        print(marker)
-        cv.line(green_channel, m0, m1, [0,0,255], 2)
-        visualize.show_image(green)
-    visualize.show_image(green_channel)
-    # greens = green_channel[:,:,1]
+    print('have search zones')
+    search_boxes = []
+    for i in range(len(markers)-1):
+        m0, m1 = markers[i], markers[i+1]
+        frame = Image.new('L', (width, height), 0)
+        box_points = [m0[0],m1[0],m1[1],m0[1]]
+        ImageDraw.Draw(frame).polygon(box_points, outline=1, fill=1)
+        box = np.array(frame)
+        search_boxes.append(box)
+    # print('getting gradient')
     # gradient = np.gradient(greens)
+    # x_gradient, y_gradient = gradient[0], gradient[1]
+    # inflection_points = np.where(abs(x_gradient) > .2, 1, 0)
+    # for i in range(potential_inflections[0].shape[0]):
+    #     print(potential_inflections[1][i], potential_inflections[0][i])
+    # img_to_show = np.zeros(green_channel.shape)
+    # green_channel[np.nonzero(inflection_points)] = [0,0,0]
+    # visualize.show_image(green_channel)
+
+    # print(x_gradient)
+    # print(x_gradient.shape, y_gradient.shape, 1, 1)
+    # print('gradient found')
+    # green_channel = np.zeros(green_channel.shape)
+    # for box in search_boxes:
+    #     for r in range(height):
+    #         for c in range(width):
+    #             gx,gy = y_gradient[r,c], x_gradient[r,c]
+    #             avg_green_change = (gx+gy)/2
+    #             green_channel[r,c,0] = gx
+    #             # green_channel[r,c,2] = gy
+    greens = green_channel[:,:,1]
+    high_greens = np.zeros(greens.shape)
+    high_greens[np.where(greens > 200)] = 1
+    green_channel[np.nonzero(high_greens)] = [255,255,255]
+    green_channel[np.where(high_greens==0)] = [0,0,0]
+    visualize.show_image(green_channel)
+
+
     # green_channel[np.where(gradient==0)] = [255, 0, 0]
-    #
+
 
 
 def adjustFieldLines(brightness, lines):
@@ -211,10 +238,8 @@ def groupLines(img, lines):
     for line in lines:
         x1, y1, x2, y2 = line[0], line[1], line[2], line[3]
         p1, p2 = (x1,y1), (x2,y2)
-        point_to_point[p1] = p2
-        point_to_point[p2] = p1
-        point_to_line[p1] = line
-        point_to_line[p2] = line
+        point_to_point[p1], point_to_point[p2] = p2, p1
+        point_to_line[p1], point_to_line[p2] = line, line
         points.extend([p1, p2])
 
     clusters = hcluster.fclusterdata(points, 50, criterion="distance")
@@ -351,11 +376,6 @@ def doSomething(img, field_lines):
     # print(int(0.9*height))
     # whites[int(0.9*height):height,:] = [255,0,0]
 
-def getGreenChannel(img):
-    green = img.copy()
-    green[:,:,0] = 0
-    green[:,:,2] = 0
-    return green
 
 if __name__ == '__main__':
     # edges = cv2.Canny(frame,100,200)
@@ -373,14 +393,12 @@ if __name__ == '__main__':
         frame = scene[0]
         height, width = frame.shape[0], frame.shape[1]
 
-        gray = cv.cvtColor(frame,cv.COLOR_BGR2GRAY)
-        edges = cv.Canny(gray,50,150,apertureSize = 3)
-        lines = cv.HoughLines(edges,1,np.pi/180,200)
-        line_coords = [getCoordinates(line[0]) for line in lines]
-        fixed = []
-        for line in line_coords:
-            points = getEdgePoints(line, width, height)
-            if len(points) == 2:
+        lines = line.detect()
+        lines = [line.fitToFrame(line, height, width) for line in lines]
+        lines = groupLines(lines)
+        for line in lines:
+            framed_line = line.fitToFrame(line, width, height)
+            if len(framed_line) == 2:
                 p0, p1 = points[0], points[1]
                 x1, y1, x2, y2 = p0[0], p0[1], p1[0], p1[1]
                 # cv.line(frame,(x1,y1),(x2,y2),(255,0,0),2)
@@ -389,7 +407,7 @@ if __name__ == '__main__':
         # doSomething(frame, groups)
         # field_lines = [getFieldLine(g) for g in groups if len(g)>2]
         # visualize.show_image(toBlackAndWhite(frame))
-        searchForHashMarks(getGreenChannel(frame), groups)
+        searchForHashMarks(getGreenChannel(frame), groups, frame)
         for field_line in groups:
 
             cv.line(frame, field_line[0], field_line[1], [0,0,255], 2)

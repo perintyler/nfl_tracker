@@ -1,3 +1,5 @@
+TESTS
+
 Field Model:
     - Detect hash marks
         + take averages of regions to get derivative array

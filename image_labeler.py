@@ -39,6 +39,8 @@ def startLabeling():
             except:
                 print('invalid label')
 
+
+
 def storeLabels(label_info):
     label_file = 'labels.json'
     with open(label_file, 'w') as f:
